@@ -1,7 +1,10 @@
-import cv2
-import pandas as pd
+"""Billboard Eye Tracker — real-time analytics pipeline."""
+
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import cv2
+import pandas as pd
 
 from scripts.people_counter import PeopleCounter
 from scripts.eye_tracker import EyeTracker
@@ -57,6 +60,8 @@ class CooldownTracker:
 # CSV LOGGER
 # ─────────────────────────────────────────────
 class CSVLogger:
+    """Append-mode CSV logger for interval-based billboard stats."""
+
     def __init__(self):
         timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.path  = OUTPUT_DIR / f"billboard_{timestamp}.csv"
@@ -70,6 +75,7 @@ class CSVLogger:
         print(f"[INFO] CSV output: {self.path}")
 
     def log(self, people_passing, people_watching):
+        """Append one row of interval data to the CSV file."""
         row = {
             "timestamp"       : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "people_passing"  : people_passing,
@@ -89,6 +95,8 @@ class CSVLogger:
 # PIPELINE UTAMA
 # ─────────────────────────────────────────────
 class BillboardPipeline:
+    """Main pipeline: people counting, eye tracking, and CSV logging."""
+
     def __init__(self, source=0):
         self.source   = source
         self.counter  = PeopleCounter()
@@ -116,7 +124,8 @@ class BillboardPipeline:
     def _draw_overlay(self, frame, active_people, watching_now):
         elapsed    = datetime.now() - self.interval_start
         remaining  = timedelta(minutes=INTERVAL_MINUTES) - elapsed
-        rem_str    = f"{int(remaining.total_seconds()//60):02d}:{int(remaining.total_seconds()%60):02d}"
+        rem_sec    = int(remaining.total_seconds())
+        rem_str    = f"{rem_sec // 60:02d}:{rem_sec % 60:02d}"
 
         lines = [
             f"Orang di frame : {active_people}",
@@ -139,6 +148,7 @@ class BillboardPipeline:
 
     # ── loop utama ───────────────────────────────────────────────────────
     def run(self):
+        """Open video source and run the analytics loop until 'Q' is pressed."""
         cap = cv2.VideoCapture(self.source)
         if not cap.isOpened():
             print("[ERROR] Tidak bisa membuka sumber video.")
@@ -203,4 +213,4 @@ if __name__ == "__main__":
     # source=0 → webcam
     # source="video.mp4" → file video
     pipeline = BillboardPipeline(source=0)
-    pipeline.run()
+    pipeline.run()

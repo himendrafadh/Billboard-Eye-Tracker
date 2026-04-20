@@ -1,0 +1,8 @@
+[MASTER]
+# cv2 is a C extension; pylint cannot introspect its members.
+extension-pkg-whitelist=cv2
+extension-pkg-allow-list=cv2
+
+[TYPECHECK]
+# Members that are dynamically set and missed by pylint.
+generated-members=cv2.*
