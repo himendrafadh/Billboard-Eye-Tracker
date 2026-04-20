@@ -163,11 +163,6 @@ class EyeTracker:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1,
             )
 
-        # ── overlay summary ──────────────────────────────────────────────
-        watching = sum(1 for f in faces_data if f["looking"])
-        cv2.putText(frame, f"Liat billboard: {watching}/{len(faces_data)}",
-                    (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 220, 255), 2)
-
         return frame, faces_data
 
 
