@@ -1,7 +1,10 @@
-import cv2
-import mediapipe as mp
-import numpy as np
+"""Eye Tracker — deteksi arah pandangan menggunakan MediaPipe FaceMesh."""
+
 from datetime import datetime
+
+import cv2
+import mediapipe as mp  # pylint: disable=no-member
+import numpy as np
 
 # ─────────────────────────────────────────────
 # KONFIGURASI
@@ -23,10 +26,12 @@ EAR_THRESHOLD     = 0.20   # eye aspect ratio minimum — mata harus terbuka
 
 
 class EyeTracker:
+    """Deteksi apakah wajah sedang lihat ke arah kamera."""
+
     def __init__(self):
         print("[INFO] Loading MediaPipe FaceMesh...")
-        self.mp_face   = mp.solutions.face_mesh
-        self.mp_draw   = mp.solutions.drawing_utils
+        self.mp_face   = mp.solutions.face_mesh  # pylint: disable=no-member
+        self.mp_draw   = mp.solutions.drawing_utils  # pylint: disable=no-member
 
         # refine_landmarks=True wajib untuk aktifkan iris landmarks (469-477)
         self.face_mesh = self.mp_face.FaceMesh(
@@ -163,10 +168,6 @@ class EyeTracker:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1,
             )
 
-        # ── overlay summary ──────────────────────────────────────────────
-        watching = sum(1 for f in faces_data if f["looking"])
-        cv2.putText(frame, f"Liat billboard: {watching}/{len(faces_data)}",
-                    (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 220, 255), 2)
 
         return frame, faces_data
 
@@ -205,4 +206,4 @@ if __name__ == "__main__":
             break
 
     cap.release()
-    cv2.destroyAllWindows()
+    cv2.destroyAllWindows()

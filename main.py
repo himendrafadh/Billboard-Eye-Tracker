@@ -1,5 +1,14 @@
-"""Billboard Eye Tracker — real-time analytics pipeline."""
+"""Billboard Eye Tracker — real-time analytics pipeline.
 
+Supports two modes:
+  - Standalone : python main.py [source]     → outputs JSON lines to stdout
+  - Via Electron: spawned by Electron main process, same JSON protocol
+"""
+
+import base64
+import json
+import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -14,8 +23,20 @@ from scripts.eye_tracker import EyeTracker
 # ─────────────────────────────────────────────
 COOLDOWN_MINUTES  = 5     # cooldown per orang (menit)
 INTERVAL_MINUTES  = 10    # akumulasi data sebelum flush ke CSV (menit)
+INTERVAL_SECONDS  = INTERVAL_MINUTES * 60
 OUTPUT_DIR        = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Resize width untuk encode frame (lebih kecil = lebih cepat transfer)
+FRAME_WIDTH = 640
+
+
+# ─────────────────────────────────────────────
+# JSON IPC HELPERS
+# ─────────────────────────────────────────────
+def send(msg: dict):
+    """Kirim satu JSON line ke stdout dan flush segera."""
+    print(json.dumps(msg, ensure_ascii=False), flush=True)
 
 
 # ─────────────────────────────────────────────
@@ -72,8 +93,6 @@ class CSVLogger:
             "timestamp", "people_passing", "people_watching"
         ]).to_csv(self.path, index=False)
 
-        print(f"[INFO] CSV output: {self.path}")
-
     def log(self, people_passing, people_watching):
         """Append one row of interval data to the CSV file."""
         row = {
@@ -86,9 +105,7 @@ class CSVLogger:
         # append ke file tanpa rewrite seluruhnya
         pd.DataFrame([row]).to_csv(self.path, mode="a", header=False, index=False)
 
-        print(f"[CSV] {row['timestamp']} | "
-              f"Lewat: {people_passing} | "
-              f"Lihat: {people_watching}")
+        return row
 
 
 # ─────────────────────────────────────────────
@@ -111,7 +128,15 @@ class BillboardPipeline:
 
     # ── flush data interval ke CSV ───────────────────────────────────────
     def _flush_interval(self):
-        self.logger.log(self.interval_passing, self.interval_watching)
+        row = self.logger.log(self.interval_passing, self.interval_watching)
+
+        # kirim csv_row ke Electron
+        send({
+            "type": "csv_row",
+            "timestamp": row["timestamp"],
+            "people_passing": row["people_passing"],
+            "people_watching": row["people_watching"],
+        })
 
         # reset counter interval (bukan total)
         self.counter.reset()
@@ -120,46 +145,36 @@ class BillboardPipeline:
         self.interval_watching = 0
         self.interval_start    = datetime.now()
 
-    # ── gambar overlay info di frame ─────────────────────────────────────
-    def _draw_overlay(self, frame, active_people, watching_now):
-        elapsed    = datetime.now() - self.interval_start
-        remaining  = timedelta(minutes=INTERVAL_MINUTES) - elapsed
-        rem_sec    = int(remaining.total_seconds())
-        rem_str    = f"{rem_sec // 60:02d}:{rem_sec % 60:02d}"
+    # ── encode frame ke base64 JPEG ──────────────────────────────────────
+    @staticmethod
+    def _encode_frame(frame):
+        """Resize frame dan encode ke base64 JPEG string."""
+        h, w = frame.shape[:2]
+        if w > FRAME_WIDTH:
+            ratio = FRAME_WIDTH / w
+            frame = cv2.resize(frame, (FRAME_WIDTH, int(h * ratio)))
 
-        lines = [
-            f"Orang di frame : {active_people}",
-            f"Total lewat    : {self.interval_passing}",
-            f"Lihat sekarang : {watching_now}",
-            f"Total lihat    : {self.interval_watching}",
-            f"Flush dalam    : {rem_str}",
-        ]
-
-        # background semi-transparan
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (8, 8), (300, 165), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
-
-        for i, line in enumerate(lines):
-            cv2.putText(frame, line, (14, 32 + i * 26),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2)
-
-        return frame
+        _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        return base64.b64encode(buf).decode('ascii')
 
     # ── loop utama ───────────────────────────────────────────────────────
     def run(self):
-        """Open video source and run the analytics loop until 'Q' is pressed."""
+        """Open video source and run the analytics loop."""
         cap = cv2.VideoCapture(self.source)
         if not cap.isOpened():
-            print("[ERROR] Tidak bisa membuka sumber video.")
+            send({"type": "error", "message": "Tidak bisa membuka sumber video."})
             return
 
-        print("[INFO] Pipeline berjalan. Tekan 'Q' untuk keluar.")
+        send({"type": "ready"})
+
+        # frame pacing: target ~30 fps agar tidak spam terlalu banyak
+        frame_interval = 1.0 / 30.0
 
         while True:
+            t_start = time.time()
+
             ret, frame = cap.read()
             if not ret:
-                print("[INFO] Video selesai / frame tidak terbaca.")
                 break
 
             # ── 1. people counter ────────────────────────────────────────
@@ -181,36 +196,59 @@ class BillboardPipeline:
                     face_id = f"face_{i}"
                     if self.cooldown.check_and_register(face_id):
                         self.interval_watching += 1
-                        print(f"[{datetime.now().strftime('%H:%M:%S')}] "
-                              f"Wajah {face_id} dihitung lihat! "
-                              f"Total interval: {self.interval_watching}")
 
-            # ── 4. overlay UI ────────────────────────────────────────────
-            frame = self._draw_overlay(frame, active_people, watching_now)
 
-            # ── 5. cek apakah sudah waktunya flush interval ──────────────
+            # ── 5. hitung sisa waktu flush ───────────────────────────────
             elapsed = datetime.now() - self.interval_start
+            remaining = timedelta(minutes=INTERVAL_MINUTES) - elapsed
+            flush_in_seconds = max(0, int(remaining.total_seconds()))
+
+            # ── 6. kirim frame + stats ke Electron ───────────────────────
+            b64 = self._encode_frame(frame)
+            send({"type": "frame", "data": b64})
+
+            send({
+                "type": "stats",
+                "active_people": active_people,
+                "people_passing": self.interval_passing,
+                "watching_now": watching_now,
+                "people_watching": self.interval_watching,
+                "flush_in_seconds": flush_in_seconds,
+            })
+
+            # ── 7. cek apakah sudah waktunya flush interval ──────────────
             if elapsed >= timedelta(minutes=INTERVAL_MINUTES):
                 self._flush_interval()
 
-            cv2.imshow("Billboard Analytics — tekan Q untuk keluar", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+            # ── 8. frame pacing ──────────────────────────────────────────
+            dt = time.time() - t_start
+            if dt < frame_interval:
+                time.sleep(frame_interval - dt)
 
         # flush data terakhir sebelum tutup
-        print("[INFO] Menyimpan data terakhir...")
         self._flush_interval()
 
         cap.release()
-        cv2.destroyAllWindows()
-        print(f"[SELESAI] CSV tersimpan di: {self.logger.path}")
+        send({"type": "done", "message": "Pipeline selesai."})
 
 
 # ─────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────
+def main():
+    """Entry point — baca source dari CLI argument."""
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        try:
+            source = int(arg)   # webcam index (0, 1, ...)
+        except ValueError:
+            source = arg        # file path
+    else:
+        source = 0              # default: webcam
+
+    pipeline = BillboardPipeline(source=source)
+    pipeline.run()
+
+
 if __name__ == "__main__":
-    # source=0 → webcam
-    # source="video.mp4" → file video
-    pipeline = BillboardPipeline(source=0)
-    pipeline.run()
+    main()

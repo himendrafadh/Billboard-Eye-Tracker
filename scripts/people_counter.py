@@ -1,6 +1,9 @@
+"""People Counter — deteksi dan hitung orang menggunakan YOLOv8 + ByteTrack."""
+
+from datetime import datetime
+
 import cv2
 from ultralytics import YOLO
-from datetime import datetime
 
 # ─────────────────────────────────────────────
 # KONFIGURASI
@@ -11,6 +14,8 @@ TARGET_CLASS = 0              # class 0 = "person" di COCO dataset
 
 
 class PeopleCounter:
+    """Hitung orang unik yang lewat menggunakan YOLOv8 tracking."""
+
     def __init__(self):
         print("[INFO] Loading model YOLOv8...")
         self.model       = YOLO(MODEL_PATH)
@@ -67,17 +72,6 @@ class PeopleCounter:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2
                 )
 
-        # ── overlay info di sudut kiri atas ─────────────────────────────
-        overlay_lines = [
-            f"Di frame: {active_count}",
-            f"Total unik: {self.count}",
-        ]
-        for i, line in enumerate(overlay_lines):
-            cv2.putText(
-                frame, line,
-                (12, 30 + i * 26),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 220, 255), 2
-            )
 
         return frame, active_count, self.count
 
@@ -119,4 +113,4 @@ if __name__ == "__main__":
 
     cap.release()
     cv2.destroyAllWindows()
-    print(f"\n[SELESAI] Total orang unik terdeteksi: {counter.count}")
+    print(f"\n[SELESAI] Total orang unik terdeteksi: {counter.count}")
