@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
     # Spawn Worker
     # Argument sys.argv bisa dimasukkan ke camera misalnya 'video.mp4'. Disini source=0.
-    producer_process = mp.Process(target=camera_producer, args=(exit_event_global, latest_in_idx, frame_ready_event, 0))
+    producer_process = mp.Process(target=camera_producer, args=(exit_event_global, latest_in_idx, frame_ready_event, 1))
     ai_process       = mp.Process(target=ai_worker_process, args=(exit_event_global, latest_in_idx, latest_out_idx, frame_ready_event, result_queue))
     
     producer_process.start()
