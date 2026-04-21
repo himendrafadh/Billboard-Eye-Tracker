@@ -4,6 +4,7 @@ import multiprocessing as mp
 from multiprocessing import shared_memory
 import numpy as np
 import cv2
+import os
 import time
 import sys
 import signal
@@ -91,15 +92,19 @@ def camera_producer(exit_event, latest_in_idx, frame_ready_event, source=0):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
     print("[Producer] Menyalakan kamera...")
-    backend = cv2.CAP_DSHOW if sys.platform == 'win32' else cv2.CAP_ANY
+    backend = cv2.CAP_DSHOW if sys.platform == 'win32' else cv2.CAP_V4L2
     if isinstance(source, str):
         cap = cv2.VideoCapture(source)
     else:
         cap = cv2.VideoCapture(source, backend)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Potong buffer antrean laten HW
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Paksa MJPG agar kamera tidak crash
+        # Sembunyikan pesan "Corrupt JPEG data" dari libjpeg (noise firmware kamera)
+        devnull = open(os.devnull, 'w')
+        os.dup2(devnull.fileno(), sys.stderr.fileno())
+        # cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
 
     shm_blocks = [shared_memory.SharedMemory(name=name) for name in SHM_NAMES_IN]
     slot_idx = 0
@@ -290,7 +295,7 @@ if __name__ == "__main__":
 
     # Spawn Worker
     # Argument sys.argv bisa dimasukkan ke camera misalnya 'video.mp4'. Disini source=0.
-    producer_process = mp.Process(target=camera_producer, args=(exit_event_global, latest_in_idx, frame_ready_event, 1))
+    producer_process = mp.Process(target=camera_producer, args=(exit_event_global, latest_in_idx, frame_ready_event, 0))
     ai_process       = mp.Process(target=ai_worker_process, args=(exit_event_global, latest_in_idx, latest_out_idx, frame_ready_event, result_queue))
     
     producer_process.start()
