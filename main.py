@@ -150,10 +150,10 @@ def draw_overlay(frame, active, passing, watching_now, total_watch, start_time):
         f"Flush dalam    : {rem_str}",
     ]
     overlay = frame.copy()
-    cv2.rectangle(overlay, (8, 8), (300, 165), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (8, 8), (180, 115), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
     for i, line in enumerate(lines):
-        cv2.putText(frame, line, (14, 32 + i * 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2)
+        cv2.putText(frame, line, (14, 25 + i * 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 220, 255), 1)
     return frame
 
 def ai_worker_process(exit_event, latest_in_idx, latest_out_idx, frame_ready_event, result_queue):
@@ -315,8 +315,8 @@ if __name__ == "__main__":
                 latency = (time.time() - result["timestamp"]) * 1000
                 display_img = frame_view.copy() 
                 
-                cv2.putText(display_img, f"Net E2E Processing: {latency:.1f} ms", (10, 460), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (50, 255, 50), 2)
+                cv2.putText(display_img, f"Net E2E Processing: {latency:.1f} ms", (10, 465), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (50, 255, 50), 1)
                 
                 cv2.imshow("Billboard Eye Tracker (Multiprocessing)", display_img)
             
